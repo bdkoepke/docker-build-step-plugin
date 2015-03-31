@@ -79,7 +79,7 @@ public class DockerEnvContributor extends EnvironmentContributor {
 						portBinding.toString());
 			}
 		}
-		String bindPorts = ports.substring(0, ports.length() - 1).toString();
+		String bindPorts = ports.substring(0, ports.length() - 1);
 		envs.put(PORT_BINDINGS_ENV_VAR, bindPorts);
 	}
 

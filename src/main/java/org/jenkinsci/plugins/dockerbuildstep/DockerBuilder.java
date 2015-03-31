@@ -1,20 +1,37 @@
 package org.jenkinsci.plugins.dockerbuildstep;
 
-import static org.apache.commons.lang.StringUtils.isBlank;
-import static org.apache.commons.lang.StringUtils.isEmpty;
-
+import com.github.dockerjava.api.DockerClient;
+import com.github.dockerjava.api.DockerException;
+import com.github.dockerjava.api.model.AuthConfig;
+import com.github.dockerjava.core.DockerClientBuilder;
+import com.github.dockerjava.core.DockerClientConfig.DockerClientConfigBuilder;
+import com.github.dockerjava.core.SSLConfig;
 import hudson.AbortException;
 import hudson.DescriptorExtensionList;
 import hudson.Extension;
 import hudson.Launcher;
-import hudson.model.BuildListener;
 import hudson.model.AbstractBuild;
 import hudson.model.AbstractProject;
+import hudson.model.BuildListener;
+import hudson.remoting.Callable;
 import hudson.tasks.BuildStepDescriptor;
 import hudson.tasks.Builder;
 import hudson.util.FormValidation;
+import jenkins.model.Jenkins;
+import net.sf.json.JSONObject;
+import org.jenkinsci.plugins.dockerbuildstep.cmd.DockerCommand;
+import org.jenkinsci.plugins.dockerbuildstep.cmd.DockerCommand.DockerCommandDescriptor;
+import org.jenkinsci.plugins.dockerbuildstep.log.ConsoleLogger;
+import org.jenkinsci.plugins.dockerbuildstep.log.DockerConsoleAnnotator;
+import org.kohsuke.stapler.DataBoundConstructor;
+import org.kohsuke.stapler.QueryParameter;
+import org.kohsuke.stapler.StaplerRequest;
 
+import javax.net.ssl.SSLContext;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
+import java.io.PrintStream;
 import java.security.KeyManagementException;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
@@ -22,26 +39,8 @@ import java.security.UnrecoverableKeyException;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import javax.net.ssl.SSLContext;
-import javax.servlet.ServletException;
-
-import jenkins.model.Jenkins;
-
-import net.sf.json.JSONObject;
-
-import org.jenkinsci.plugins.dockerbuildstep.cmd.DockerCommand;
-import org.jenkinsci.plugins.dockerbuildstep.cmd.DockerCommand.DockerCommandDescriptor;
-import org.jenkinsci.plugins.dockerbuildstep.log.ConsoleLogger;
-import org.kohsuke.stapler.DataBoundConstructor;
-import org.kohsuke.stapler.QueryParameter;
-import org.kohsuke.stapler.StaplerRequest;
-
-import com.github.dockerjava.core.DockerClientConfig.DockerClientConfigBuilder;
-import com.github.dockerjava.core.DockerClientBuilder;
-import com.github.dockerjava.core.SSLConfig;
-import com.github.dockerjava.api.DockerClient;
-import com.github.dockerjava.api.DockerException;
-import com.github.dockerjava.api.model.AuthConfig;
+import static org.apache.commons.lang.StringUtils.isBlank;
+import static org.apache.commons.lang.StringUtils.isEmpty;
 
 /**
  * Build step which executes various Docker commands via Docker REST API.
@@ -75,13 +74,38 @@ public class DockerBuilder extends Builder {
 		}
 
 		try {
-			dockerCmd.execute(build, clog);
+            final OutputStream o = new ByteArrayOutputStream();
+            final PrintStream p = new PrintStream(o);
+            final ConsoleLogger c = new ConsoleLogger(null, new DockerConsoleAnnotator(p)) {
+                @Override
+                protected PrintStream getLogger() {
+                    return p;
+                }
+            };
+            final AbstractBuild b = build;
+            launcher.getChannel().call(new Callable<String, DockerException>() {
+                public String call() throws DockerException {
+                    try {
+                        dockerCmd.execute(b, c);
+                    } catch (AbortException e) {
+                        return e.getMessage();
+                    }
+
+                    return o.toString();
+                }
+            });
 		} catch (DockerException e) {
 			clog.logError("command '" + dockerCmd.getDescriptor().getDisplayName() + "' failed: " + e.getMessage());
 			LOGGER.severe("Failed to execute Docker command " + dockerCmd.getDescriptor().getDisplayName() + ": "
 					+ e.getMessage());
 			throw new AbortException(e.getMessage());
-		}
+		} catch (IOException e) {
+            LOGGER.severe(e.getMessage());
+            throw new AbortException(e.getMessage());
+        } catch (InterruptedException i) {
+            LOGGER.severe(i.getMessage());
+            throw new AbortException(i.getMessage());
+        }
 		return true;
 	}
 

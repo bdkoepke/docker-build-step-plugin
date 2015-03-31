@@ -18,24 +18,25 @@ public class ConsoleLogger {
     private final BuildListener listener;
     private final DockerConsoleAnnotator annotator;
 
-    public ConsoleLogger(BuildListener listener) {
+    public ConsoleLogger(BuildListener listener, DockerConsoleAnnotator annotator) {
         this.listener = listener;
-        this.annotator = new DockerConsoleAnnotator(this.listener.getLogger());
+        this.annotator = annotator;
+    }
+
+
+    public ConsoleLogger(BuildListener listener) {
+        this(listener, new
+                DockerConsoleAnnotator(listener.getLogger()));
     }
 
     public BuildListener getListener() {
         return listener;
     }
 
-    public PrintStream getLogger() {
+    protected PrintStream getLogger() {
         return listener.getLogger();
     }
 
-    
-    public void logAnnot(String message) {
-        logAnnot("", message);
-    }
-    
     public void logInfo(String message) {
         logAnnot("[Docker] INFO: ", message);
     }
@@ -59,7 +60,7 @@ public class ConsoleLogger {
         try {
             annotator.eol(msg, msg.length);
         } catch (IOException e) {
-            listener.getLogger().println("Problem with writing into console log: " + e.getMessage());
+            getLogger().println("Problem with writing into console log: " + e.getMessage());
         }
     }
 
@@ -70,6 +71,6 @@ public class ConsoleLogger {
      *            message in plain text
      */
     public void log(String message) {
-        listener.getLogger().println(message);
+        getLogger().println(message);
     }
 }
